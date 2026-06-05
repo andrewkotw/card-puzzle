@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>乾坤大挪移</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="board">
+      <section class="left-panel" aria-label="牌局資訊">
+        <div class="pink label">牌面</div>
+        <button class="current-card" id="currentCard" type="button">-</button>
+        <div class="pink label">牌數</div>
+        <div class="cyan number" id="remaining">20</div>
+        <div class="pink label">局數</div>
+        <div class="cyan number" id="round">1</div>
+      </section>
+
+      <section class="play-grid" aria-label="暫存區">
+        <div class="headers">
+          <button class="pink tab stack-tab" data-stack="0" type="button">A'</button>
+          <button class="pink tab stack-tab" data-stack="1" type="button">B</button>
+          <button class="pink tab stack-tab" data-stack="2" type="button">C</button>
+          <button class="pink tab stack-tab" data-stack="3" type="button">D</button>
+        </div>
+        <div class="grid stack-grid" id="stackGrid"></div>
+      </section>
+
+      <section class="goal-area" aria-label="目標區">
+        <div class="headers">
+          <button class="pink tab goal-tab" data-goal="0" type="button">+1</button>
+          <button class="pink tab goal-tab" data-goal="1" type="button">+2</button>
+          <button class="pink tab goal-tab" data-goal="2" type="button">+3</button>
+          <button class="pink tab goal-tab" data-goal="3" type="button">+4</button>
+        </div>
+        <div class="grid goal-grid" id="goalGrid"></div>
+      </section>
+
+      <aside class="side-panel" aria-label="控制面板">
+        <div class="score-grid">
+          <div class="stat-card">
+            <span>連續</span>
+            <strong id="streak">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>完成</span>
+            <strong id="completed">0</strong>
+          </div>
+          <div class="stat-card total">
+            <span>合計</span>
+            <strong id="score">0</strong>
+          </div>
+        </div>
+
+        <div class="level-control">
+          <label for="prefillSlider">已排好 <strong id="prefillValue">8</strong> 排</label>
+          <input id="prefillSlider" type="range" min="0" max="12" value="8" />
+          <div class="level-caption">
+            <span>全部自己排</span>
+            <span>低難度</span>
+          </div>
+          <label class="hint-toggle">
+            <input id="hintToggle" type="checkbox" />
+            <span>顯示後續白牌</span>
+          </label>
+        </div>
+
+        <div class="controls" aria-label="控制">
+          <button id="undoBtn" type="button">倒退</button>
+          <button id="restartBtn" type="button">再一次</button>
+          <button id="nextBtn" type="button">下一局</button>
+        </div>
+
+        <p id="message">點牌面可發下一張，或把牌放進暫存 stack / 目標欄。</p>
+      </aside>
+    </main>
+
+    <script src="game.js"></script>
+  </body>
+</html>
