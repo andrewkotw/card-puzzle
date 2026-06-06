@@ -19,10 +19,10 @@
 
       <section class="play-grid" aria-label="暫存區">
         <div class="headers">
-          <button class="pink tab stack-tab" data-stack="0" type="button">A'</button>
-          <button class="pink tab stack-tab" data-stack="1" type="button">B</button>
-          <button class="pink tab stack-tab" data-stack="2" type="button">C</button>
-          <button class="pink tab stack-tab" data-stack="3" type="button">D</button>
+          <button class="pink tab stack-tab" data-stack="0" type="button">暫A</button>
+          <button class="pink tab stack-tab" data-stack="1" type="button">暫B</button>
+          <button class="pink tab stack-tab" data-stack="2" type="button">暫C</button>
+          <button class="pink tab stack-tab" data-stack="3" type="button">暫D</button>
         </div>
         <div class="grid stack-grid" id="stackGrid"></div>
       </section>
@@ -40,7 +40,7 @@
       <aside class="side-panel" aria-label="控制面板">
         <div class="score-grid">
           <div class="stat-card">
-            <span>連續</span>
+            <span>連續 Combo</span>
             <strong id="streak">0</strong>
           </div>
           <div class="stat-card">
@@ -50,24 +50,29 @@
           <div class="stat-card total">
             <span>合計</span>
             <strong id="score">0</strong>
+            <small>最佳 <b id="bestScore">0</b></small>
           </div>
         </div>
 
         <div class="level-control">
-          <label for="prefillSlider">已排好 <strong id="prefillValue">8</strong> 排</label>
-          <input id="prefillSlider" type="range" min="0" max="12" value="8" />
-          <div class="level-caption">
-            <span>全部自己排</span>
-            <span>低難度</span>
-          </div>
-          <label class="hint-toggle">
-            <input id="hintToggle" type="checkbox" />
-            <span>顯示後續白牌</span>
-          </label>
+          <details class="settings-panel">
+            <summary>難度 / 設定</summary>
+            <label for="prefillSlider">已排好 <strong id="prefillValue">8</strong> 排</label>
+            <div class="difficulty-name" id="difficultyName">普通</div>
+            <input id="prefillSlider" type="range" min="0" max="12" value="8" />
+            <div class="level-caption">
+              <span>全部自己排</span>
+              <span>低難度</span>
+            </div>
+            <label class="hint-toggle">
+              <input id="hintToggle" type="checkbox" />
+              <span>顯示後續白牌</span>
+            </label>
+          </details>
         </div>
 
         <div class="controls" aria-label="控制">
-          <button id="undoBtn" type="button">倒退</button>
+          <button id="undoBtn" type="button">倒退 -5</button>
           <button id="restartBtn" type="button">再一次</button>
           <button id="nextBtn" type="button">下一局</button>
         </div>
