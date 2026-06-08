@@ -319,6 +319,32 @@ input {
   transform: translateY(-1px);
 }
 
+.current-card.empty {
+  color: rgba(247, 242, 223, 0.58);
+  cursor: default;
+  border-color: #687273;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0 10px, transparent 10px 20px),
+    linear-gradient(180deg, var(--locked), var(--locked-2));
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.08),
+    4px 5px 0 rgba(18, 30, 31, 0.75);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.current-card.empty::before {
+  content: "";
+}
+
+.current-card.empty::after {
+  border-color: rgba(247, 242, 223, 0.26);
+}
+
+.current-card.empty:hover {
+  color: rgba(247, 242, 223, 0.58);
+  transform: none;
+}
+
 .headers {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

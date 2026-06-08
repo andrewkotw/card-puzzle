@@ -44,7 +44,7 @@ For middle school learners, this game can support:
 - Mistake reflection after invalid moves without revealing answers before students try
 - Stuck detection when no legal moves remain
 - Combo scoring for consecutive correct placements
-- Penalties for temporary moves and undo
+- Combo breaks for temporary moves and penalties for undo
 - Gentle sound and animation feedback, with a sound toggle for classroom use
 - Clear feedback for invalid moves
 - Responsive table-style UI modified from and inspired by the original Excel recreation

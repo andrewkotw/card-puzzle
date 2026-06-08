@@ -1,8 +1,7 @@
 const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const stackNames = ["暫A", "暫B", "暫C", "暫D"];
 const targetRows = 13;
-const maxStackHeight = 14;
-const tempMovePenalty = 1;
+const maxStackHeight = 16;
 const undoPenalty = 5;
 const dragThreshold = 6;
 
@@ -271,6 +270,15 @@ function sourceCard() {
   return stack[stack.length - 1] ?? null;
 }
 
+function cardFromSource(source) {
+  if (!source) return null;
+  if (source.type === "stack") {
+    const stack = state.stacks[source.stackIndex];
+    return stack[stack.length - 1] ?? null;
+  }
+  return state.current;
+}
+
 function canPushToStack(stackIndex) {
   return !state.selected && Boolean(state.current) && state.stacks[stackIndex].length < maxStackHeight;
 }
@@ -278,6 +286,10 @@ function canPushToStack(stackIndex) {
 function canMoveToGoal(goalIndex) {
   const card = sourceCard();
   if (!card) return false;
+  return cardCanMoveToGoal(card, goalIndex);
+}
+
+function cardCanMoveToGoal(card, goalIndex) {
   const nextIndex = state.goals[goalIndex].length;
   return state.goalSequences[goalIndex][nextIndex] === card;
 }
@@ -287,7 +299,19 @@ function nextNeededCard(goalIndex) {
 }
 
 function cardCanMoveToAnyGoal(card) {
-  return state.goalSequences.some((sequence, goalIndex) => sequence[state.goals[goalIndex].length] === card);
+  return state.goalSequences.some((sequence, goalIndex) => cardCanMoveToGoal(card, goalIndex));
+}
+
+function autoGoalSource(goalIndex) {
+  if (cardCanMoveToGoal(state.current, goalIndex)) return { type: "current" };
+
+  for (let stackIndex = 0; stackIndex < state.stacks.length; stackIndex += 1) {
+    const stack = state.stacks[stackIndex];
+    const card = stack[stack.length - 1] ?? null;
+    if (cardCanMoveToGoal(card, goalIndex)) return { type: "stack", stackIndex };
+  }
+
+  return null;
 }
 
 function hasAnyLegalMove() {
@@ -307,15 +331,14 @@ function reflectionForGoal(goalIndex, card) {
 
 function scoreCorrectPlacement() {
   state.combo += 1;
-  const gained = Math.min(50, 10 + (state.combo - 1) * 5);
+  const gained = Math.min(300, 10 + state.combo * state.combo * 5);
   state.score += gained;
   return gained;
 }
 
-function applyTempMovePenalty() {
+function breakComboForTempMove() {
   state.combo = 0;
   state.tempMoves += 1;
-  state.score = Math.max(0, state.score - tempMovePenalty);
 }
 
 function applyUndoPenalty() {
@@ -570,6 +593,13 @@ function takeSourceCard() {
   return card;
 }
 
+function takeCardFromSource(source) {
+  if (source.type === "stack") return state.stacks[source.stackIndex].pop();
+  const card = state.current;
+  drawNextCard();
+  return card;
+}
+
 function pushToStack(stackIndex) {
   if (state.selected) {
     showInvalidFeedback(document.querySelector(`[data-stack="${stackIndex}"]`), "暫存牌不能移到其他暫存欄，只能放到正確的 +1～+4。Combo 歸零。");
@@ -588,25 +618,25 @@ function pushToStack(stackIndex) {
   state.stacks[stackIndex].push(card);
   state.selected = null;
   state.lastPlaced = { type: "stack", index: stackIndex, row: state.stacks[stackIndex].length - 1, card };
-  applyTempMovePenalty();
-  setMessage(`${card} 放入 ${stackNames[stackIndex]}，扣 ${tempMovePenalty} 分，Combo 歸零。`);
+  breakComboForTempMove();
+  setMessage(`${card} 放入 ${stackNames[stackIndex]}，Combo 歸零，不扣分。`);
   playSound("temp");
   render();
   flashElement(scoreEl, "stat-pop");
 }
 
-function moveToGoal(goalIndex, feedbackTarget = null) {
-  const card = sourceCard();
+function placeSourceOnGoal(goalIndex, source, feedbackTarget = null) {
+  const card = cardFromSource(source);
   if (!card) {
     showInvalidFeedback(feedbackTarget ?? document.querySelector(`[data-goal="${goalIndex}"]`), "現在沒有牌可以放。Combo 歸零。");
     return;
   }
-  if (!canMoveToGoal(goalIndex)) {
+  if (!cardCanMoveToGoal(card, goalIndex)) {
     showInvalidFeedback(feedbackTarget ?? document.querySelector(`[data-goal="${goalIndex}"]`), `${reflectionForGoal(goalIndex, card)} Combo 歸零。`);
     return;
   }
   state.history.push(snapshot());
-  const moved = takeSourceCard();
+  const moved = takeCardFromSource(source);
   state.goals[goalIndex].push(moved);
   state.selected = null;
   state.completed += 1;
@@ -624,6 +654,24 @@ function moveToGoal(goalIndex, feedbackTarget = null) {
   flashElement(scoreEl, "stat-pop");
   flashElement(completedEl, "stat-pop");
   if (cleared) flashElement(boardEl, "round-clear");
+}
+
+function moveToGoal(goalIndex, feedbackTarget = null) {
+  const source = state.selected ? { type: "stack", stackIndex: state.selected.stackIndex } : { type: "current" };
+  placeSourceOnGoal(goalIndex, source, feedbackTarget);
+}
+
+function autoMoveToGoal(goalIndex, feedbackTarget = null) {
+  const source = autoGoalSource(goalIndex);
+  if (!source) {
+    showInvalidFeedback(
+      feedbackTarget ?? document.querySelector(`[data-goal="${goalIndex}"]`),
+      `+${goalIndex + 1} 目前需要 ${nextNeededCard(goalIndex)}，牌頂與暫A～暫D最上面都沒有可放的卡片。Combo 歸零。`,
+    );
+    return;
+  }
+
+  placeSourceOnGoal(goalIndex, source, feedbackTarget);
 }
 
 function selectStackTop(stackIndex) {
@@ -720,6 +768,7 @@ function render() {
   currentCardEl.dataset.rank = state.current ?? "";
   currentCardEl.classList.toggle("rank-wide", Boolean(state.current && state.current.length > 1));
   currentCardEl.classList.toggle("active", Boolean(state.current && !state.selected));
+  currentCardEl.classList.toggle("empty", !state.current && state.deck.length === 0);
   remainingEl.textContent = state.deck.length + (state.current ? 1 : 0);
   roundEl.textContent = state.round;
   streakEl.textContent = state.combo;
@@ -752,7 +801,7 @@ currentCardEl.addEventListener("click", () => {
   if (!state.current) {
     setMessage("牌已經發完了，請整理暫存 stack。");
   } else {
-    setMessage(`目前牌面是 ${state.current}。連續放對可累積 Combo，暫存會扣 ${tempMovePenalty} 分。`);
+    setMessage(`目前牌面是 ${state.current}。連續放對可累積 Combo，暫存只會中斷 Combo，不扣分。`);
   }
   render();
 });
@@ -766,7 +815,7 @@ document.querySelectorAll(".stack-tab").forEach((button) => {
 });
 
 document.querySelectorAll(".goal-tab").forEach((button) => {
-  button.addEventListener("click", () => moveToGoal(Number(button.dataset.goal), button));
+  button.addEventListener("click", () => autoMoveToGoal(Number(button.dataset.goal), button));
 });
 
 stackGridEl.addEventListener("click", (event) => {
