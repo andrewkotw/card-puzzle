@@ -1,7 +1,7 @@
 const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const stackNames = ["暫A", "暫B", "暫C", "暫D"];
 const targetRows = 13;
-const maxStackHeight = 19;
+const maxStackHeight = 16;
 const undoPenalty = 5;
 const dragThreshold = 6;
 
