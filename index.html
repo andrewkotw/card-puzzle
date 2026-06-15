@@ -23,8 +23,11 @@
         <button class="current-card" id="currentCard" type="button">-</button>
         <div class="pink label">牌數</div>
         <div class="cyan number" id="remaining">20</div>
-        <div class="pink label">局數</div>
-        <div class="cyan number" id="round">1</div>
+        <div class="pink label">難度</div>
+        <div class="cyan number difficulty-summary">
+          <strong id="summaryDifficulty">普通</strong>
+          <span>已排 <b id="summaryPrefill">8</b> 排</span>
+        </div>
       </section>
 
       <section class="play-grid" aria-label="暫存區">
@@ -59,6 +62,7 @@
           </div>
           <div class="stat-card total">
             <span>合計</span>
+            <button class="score-help-button" id="scoreHelpBtn" type="button" aria-label="查看計分方式">?</button>
             <strong id="score">0</strong>
             <small>最佳 <b id="bestScore">0</b></small>
           </div>
@@ -102,6 +106,38 @@
         <p id="message">點牌面可發下一張，或把牌放進暫存 stack / 目標欄。</p>
       </aside>
     </main>
+
+    <div class="score-help-overlay" id="scoreHelpOverlay" role="dialog" aria-modal="true" aria-labelledby="scoreHelpTitle" hidden>
+      <section class="score-help-panel">
+        <header>
+          <div>
+            <span class="score-help-kicker">HOW TO SCORE</span>
+            <h2 id="scoreHelpTitle">計分方式</h2>
+          </div>
+          <button class="score-help-close" id="scoreHelpCloseBtn" type="button" aria-label="關閉計分說明">×</button>
+        </header>
+
+        <div class="score-help-content">
+          <section class="score-rule">
+            <h3>Combo 加分</h3>
+            <p>每張正確放入目標欄：<strong>20 + Combo × 10</strong></p>
+            <div class="combo-examples" aria-label="Combo 加分範例">
+              <span>Combo 1 <b>+30</b></span>
+              <span>Combo 5 <b>+70</b></span>
+              <span>Combo 10 <b>+120</b></span>
+              <span>Combo 20 <b>+220</b></span>
+            </div>
+            <p class="score-note">放入暫存區或放錯位置會中斷 Combo；倒退一步扣 5 分。每局重新計分，最佳紀錄會保留。</p>
+          </section>
+
+          <section class="score-rule">
+            <h3>破關獎勵</h3>
+            <p>排好的牌越少，完成挑戰後獲得的獎勵越高。</p>
+            <div class="clear-bonus-table" id="clearBonusTable"></div>
+          </section>
+        </div>
+      </section>
+    </div>
 
     <script src="game.js"></script>
   </body>

@@ -4,6 +4,7 @@ const targetRows = 13;
 const maxStackHeight = 16;
 const undoPenalty = 5;
 const dragThreshold = 6;
+const clearBonusesByPrefilledRows = [6000, 5000, 4200, 3500, 3000, 2500, 2000, 1600, 1200, 900, 600, 300, 100];
 
 const state = {
   round: 1,
@@ -45,13 +46,18 @@ const dragState = {
 
 const currentCardEl = document.getElementById("currentCard");
 const remainingEl = document.getElementById("remaining");
-const roundEl = document.getElementById("round");
+const summaryPrefillEl = document.getElementById("summaryPrefill");
+const summaryDifficultyEl = document.getElementById("summaryDifficulty");
 const stackGridEl = document.getElementById("stackGrid");
 const goalGridEl = document.getElementById("goalGrid");
 const streakEl = document.getElementById("streak");
 const completedEl = document.getElementById("completed");
 const scoreEl = document.getElementById("score");
 const bestScoreEl = document.getElementById("bestScore");
+const scoreHelpBtn = document.getElementById("scoreHelpBtn");
+const scoreHelpOverlay = document.getElementById("scoreHelpOverlay");
+const scoreHelpCloseBtn = document.getElementById("scoreHelpCloseBtn");
+const clearBonusTableEl = document.getElementById("clearBonusTable");
 const messageEl = document.getElementById("message");
 const undoBtn = document.getElementById("undoBtn");
 const restartBtn = document.getElementById("restartBtn");
@@ -66,6 +72,24 @@ const seedRandomBtn = document.getElementById("seedRandomBtn");
 const soundToggle = document.getElementById("soundToggle");
 const boardEl = document.querySelector(".board");
 let audioContext = null;
+let scoreHelpPreviousFocus = null;
+
+function openScoreHelp() {
+  scoreHelpPreviousFocus = document.activeElement;
+  clearBonusTableEl.innerHTML = clearBonusesByPrefilledRows
+    .map(
+      (bonus, prefilledRows) =>
+        `<div class="${prefilledRows === state.prefilledRows ? "current" : ""}"><span>${prefilledRows} 排</span><b>+${bonus}</b></div>`,
+    )
+    .join("");
+  scoreHelpOverlay.hidden = false;
+  scoreHelpCloseBtn.focus();
+}
+
+function closeScoreHelp() {
+  scoreHelpOverlay.hidden = true;
+  scoreHelpPreviousFocus?.focus();
+}
 
 function createDeck() {
   return buildGoalSequences().flatMap((sequence) => sequence.slice(state.prefilledRows));
@@ -331,7 +355,7 @@ function reflectionForGoal(goalIndex, card) {
 
 function scoreCorrectPlacement() {
   state.combo += 1;
-  const gained = Math.min(300, 10 + state.combo * state.combo * 5);
+  const gained = 20 + state.combo * 10;
   state.score += gained;
   return gained;
 }
@@ -349,7 +373,7 @@ function applyUndoPenalty() {
 
 function awardClearBonus() {
   if (state.lastClearBonus > 0) return 0;
-  const clearBonus = (targetRows - state.prefilledRows) * 20;
+  const clearBonus = clearBonusesByPrefilledRows[state.prefilledRows] ?? 0;
   state.lastClearBonus = clearBonus;
   state.score += clearBonus;
   return clearBonus;
@@ -770,7 +794,9 @@ function render() {
   currentCardEl.classList.toggle("active", Boolean(state.current && !state.selected));
   currentCardEl.classList.toggle("empty", !state.current && state.deck.length === 0);
   remainingEl.textContent = state.deck.length + (state.current ? 1 : 0);
-  roundEl.textContent = state.round;
+  summaryPrefillEl.textContent = state.prefilledRows;
+  summaryDifficultyEl.textContent = difficultyLabel(state.prefilledRows);
+  summaryDifficultyEl.dataset.difficulty = difficultyClass(state.prefilledRows);
   streakEl.textContent = state.combo;
   completedEl.textContent = state.completed;
   state.bestScore = Math.max(state.bestScore, state.score);
@@ -862,6 +888,9 @@ nextBtn.addEventListener("click", () => {
 
 prefillSlider.addEventListener("input", () => {
   state.prefilledRows = Number(prefillSlider.value);
+  summaryPrefillEl.textContent = state.prefilledRows;
+  summaryDifficultyEl.textContent = difficultyLabel(state.prefilledRows);
+  summaryDifficultyEl.dataset.difficulty = difficultyClass(state.prefilledRows);
   prefillValueEl.textContent = state.prefilledRows;
   difficultyNameEl.textContent = difficultyLabel(state.prefilledRows);
   difficultyNameEl.className = `difficulty-name ${difficultyClass(state.prefilledRows)}`;
@@ -897,6 +926,15 @@ seedRandomBtn.addEventListener("click", () => {
 soundToggle.addEventListener("change", () => {
   state.soundEnabled = soundToggle.checked;
   if (state.soundEnabled) playSound("place");
+});
+
+scoreHelpBtn.addEventListener("click", openScoreHelp);
+scoreHelpCloseBtn.addEventListener("click", closeScoreHelp);
+scoreHelpOverlay.addEventListener("click", (event) => {
+  if (event.target === scoreHelpOverlay) closeScoreHelp();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !scoreHelpOverlay.hidden) closeScoreHelp();
 });
 
 window.addEventListener("pointermove", onPointerMove, { passive: false });
