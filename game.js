@@ -4,6 +4,26 @@ const targetRows = 13;
 const maxStackHeight = 16;
 const undoPenalty = 5;
 const dragThreshold = 6;
+const demoStepDelay = 420;
+const demoSolverNodeLimit = 250000;
+const demoSolverProfiles = [
+  {
+    name: "一般搜尋",
+    progressWeight: 10000,
+    deckWeight: 100,
+    disorderWeight: 10,
+    depthWeight: 1,
+    mode: "urgency",
+  },
+  {
+    name: "反向堆疊搜尋",
+    progressWeight: 8000,
+    deckWeight: 60,
+    disorderWeight: 80,
+    depthWeight: 1,
+    mode: "reverse",
+  },
+];
 const clearBonusesByPrefilledRows = [6000, 5000, 4200, 3500, 3000, 2500, 2000, 1600, 1200, 900, 600, 300, 100];
 
 const state = {
@@ -28,6 +48,7 @@ const state = {
   seed: initialSeed(),
   lastPlaced: null,
   stuckAnnounced: false,
+  demoMode: false,
 };
 
 const dragState = {
@@ -62,6 +83,7 @@ const messageEl = document.getElementById("message");
 const undoBtn = document.getElementById("undoBtn");
 const restartBtn = document.getElementById("restartBtn");
 const nextBtn = document.getElementById("nextBtn");
+const demoBtn = document.getElementById("demoBtn");
 const prefillSlider = document.getElementById("prefillSlider");
 const prefillValueEl = document.getElementById("prefillValue");
 const difficultyNameEl = document.getElementById("difficultyName");
@@ -73,6 +95,9 @@ const soundToggle = document.getElementById("soundToggle");
 const boardEl = document.querySelector(".board");
 let audioContext = null;
 let scoreHelpPreviousFocus = null;
+let demoTimer = null;
+let demoMoves = [];
+let demoMoveIndex = 0;
 
 function openScoreHelp() {
   scoreHelpPreviousFocus = document.activeElement;
@@ -89,6 +114,364 @@ function openScoreHelp() {
 function closeScoreHelp() {
   scoreHelpOverlay.hidden = true;
   scoreHelpPreviousFocus?.focus();
+}
+
+function createDemoSolveState() {
+  const goalSequences = buildGoalSequences();
+  const deck = shuffle(goalSequences.flatMap((sequence) => sequence.slice(state.prefilledRows)), roundSeed());
+  return {
+    deck: deck.slice(0, -1),
+    current: deck[deck.length - 1] ?? null,
+    stacks: [[], [], [], []],
+    goals: [state.prefilledRows, state.prefilledRows, state.prefilledRows, state.prefilledRows],
+    goalSequences,
+  };
+}
+
+function isDemoSolveCleared(solveState) {
+  return solveState.goals.every((goalLength) => goalLength === targetRows);
+}
+
+function demoCanMoveToGoal(card, goalIndex, solveState) {
+  if (!card) return false;
+  return solveState.goalSequences[goalIndex][solveState.goals[goalIndex]] === card;
+}
+
+function demoCardUrgency(card, solveState) {
+  let bestDistance = 99;
+  for (let goalIndex = 0; goalIndex < solveState.goalSequences.length; goalIndex += 1) {
+    const sequence = solveState.goalSequences[goalIndex];
+    for (let row = solveState.goals[goalIndex]; row < targetRows; row += 1) {
+      if (sequence[row] === card) {
+        bestDistance = Math.min(bestDistance, row - solveState.goals[goalIndex]);
+        break;
+      }
+    }
+  }
+  return bestDistance;
+}
+
+function demoCardUrgencyForGoal(card, goalIndex, solveState) {
+  const sequence = solveState.goalSequences[goalIndex];
+  for (let row = solveState.goals[goalIndex]; row < targetRows; row += 1) {
+    if (sequence[row] === card) return row - solveState.goals[goalIndex];
+  }
+  return 99;
+}
+
+function demoCompletedCount(solveState) {
+  return solveState.goals.reduce((total, goalLength) => total + goalLength, 0);
+}
+
+function canonicalDemoStacks(stacks) {
+  return stacks.map((stack) => stack.join(",")).sort().join("|");
+}
+
+function demoSolveKey(solveState) {
+  return [
+    solveState.current ?? "",
+    solveState.deck.join(","),
+    solveState.goals.join(","),
+    canonicalDemoStacks(solveState.stacks),
+  ].join(";");
+}
+
+function demoStackDisorder(solveState) {
+  let disorder = 0;
+  for (const stack of solveState.stacks) {
+    for (let index = stack.length - 1; index > 0; index -= 1) {
+      const topUrgency = demoCardUrgency(stack[index], solveState);
+      const buriedUrgency = demoCardUrgency(stack[index - 1], solveState);
+      if (topUrgency > buriedUrgency) disorder += 20 + topUrgency - buriedUrgency;
+    }
+    disorder += stack.length * 0.2;
+  }
+  return disorder;
+}
+
+function demoReverseStackDisorder(stack, solveState) {
+  if (!stack.length) return 0;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let goalIndex = 0; goalIndex < 4; goalIndex += 1) {
+    let previousDistance = -1;
+    let badOrder = 0;
+    let gaps = 0;
+
+    for (const card of stack) {
+      const distance = demoCardUrgencyForGoal(card, goalIndex, solveState);
+      if (previousDistance !== -1) {
+        if (distance > previousDistance) badOrder += distance - previousDistance;
+        else gaps += Math.max(0, previousDistance - distance - 1);
+      }
+      previousDistance = distance;
+    }
+
+    bestScore = Math.min(bestScore, badOrder * 100 + gaps);
+  }
+
+  return bestScore + stack.length * 0.5;
+}
+
+function demoReverseBoardDisorder(solveState) {
+  return solveState.stacks.reduce((total, stack) => total + demoReverseStackDisorder(stack, solveState), 0);
+}
+
+function demoBoardDisorder(solveState, profile) {
+  return profile.mode === "reverse" ? demoReverseBoardDisorder(solveState) : demoStackDisorder(solveState);
+}
+
+function demoSolvePriority(solveState, depth, profile) {
+  return (
+    -demoCompletedCount(solveState) * profile.progressWeight +
+    solveState.deck.length * profile.deckWeight +
+    demoBoardDisorder(solveState, profile) * profile.disorderWeight +
+    depth * profile.depthWeight
+  );
+}
+
+function demoStackMoveScore(stack, card, solveState, profile) {
+  if (profile.mode === "reverse") {
+    const before = demoReverseStackDisorder(stack, solveState);
+    const after = demoReverseStackDisorder([...stack, card], solveState);
+    const emptyBonus = stack.length ? 0 : -20;
+    return (after - before) * 100 + stack.length * 3 + demoCardUrgency(card, solveState) + emptyBonus;
+  }
+
+  if (!stack.length) return -5;
+  const currentUrgency = demoCardUrgency(card, solveState);
+  const topCard = stack[stack.length - 1] ?? null;
+  const topUrgency = topCard ? demoCardUrgency(topCard, solveState) : 999;
+  const buriedPenalty = topCard && currentUrgency > topUrgency ? 1000 + currentUrgency - topUrgency : 0;
+  return buriedPenalty + stack.length * 2 + (topCard ? topUrgency / 20 : -5);
+}
+
+function demoSolveActions(solveState, profile) {
+  const goalMoves = [];
+  for (let goalIndex = 0; goalIndex < 4; goalIndex += 1) {
+    if (demoCanMoveToGoal(solveState.current, goalIndex, solveState)) goalMoves.push({ type: "current-goal", goalIndex });
+  }
+  for (let stackIndex = 0; stackIndex < 4; stackIndex += 1) {
+    const stack = solveState.stacks[stackIndex];
+    const card = stack[stack.length - 1] ?? null;
+    for (let goalIndex = 0; goalIndex < 4; goalIndex += 1) {
+      if (demoCanMoveToGoal(card, goalIndex, solveState)) goalMoves.push({ type: "stack-goal", stackIndex, goalIndex });
+    }
+  }
+  if (goalMoves.length) return goalMoves;
+  if (!solveState.current) return [];
+
+  const seenStackShapes = new Set();
+  const stackMoves = [];
+  for (let stackIndex = 0; stackIndex < 4; stackIndex += 1) {
+    const stack = solveState.stacks[stackIndex];
+    if (stack.length >= maxStackHeight) continue;
+    const stackShape = stack.join(",");
+    if (seenStackShapes.has(stackShape)) continue;
+    seenStackShapes.add(stackShape);
+    stackMoves.push({
+      type: "current-stack",
+      stackIndex,
+      score: demoStackMoveScore(stack, solveState.current, solveState, profile),
+    });
+  }
+  stackMoves.sort((a, b) => a.score - b.score);
+  return stackMoves.map(({ score, ...action }) => action);
+}
+
+function applyDemoSolveAction(solveState, action) {
+  const nextState = {
+    deck: solveState.deck,
+    current: solveState.current,
+    stacks: solveState.stacks.map((stack) => [...stack]),
+    goals: [...solveState.goals],
+    goalSequences: solveState.goalSequences,
+  };
+
+  if (action.type === "stack-goal") {
+    nextState.stacks[action.stackIndex].pop();
+    nextState.goals[action.goalIndex] += 1;
+    return nextState;
+  }
+
+  if (action.type === "current-goal") {
+    nextState.goals[action.goalIndex] += 1;
+  } else {
+    nextState.stacks[action.stackIndex].push(nextState.current);
+  }
+
+  nextState.current = nextState.deck[nextState.deck.length - 1] ?? null;
+  nextState.deck = nextState.deck.slice(0, -1);
+  return nextState;
+}
+
+function createDemoPriorityQueue() {
+  const items = [];
+  return {
+    get length() {
+      return items.length;
+    },
+    push(item) {
+      items.push(item);
+      let index = items.length - 1;
+      while (index > 0) {
+        const parentIndex = (index - 1) >> 1;
+        if (items[parentIndex].priority <= item.priority) break;
+        items[index] = items[parentIndex];
+        index = parentIndex;
+      }
+      items[index] = item;
+    },
+    pop() {
+      if (!items.length) return null;
+      const top = items[0];
+      const last = items.pop();
+      if (items.length && last) {
+        let index = 0;
+        while (true) {
+          const leftIndex = index * 2 + 1;
+          const rightIndex = leftIndex + 1;
+          if (leftIndex >= items.length) break;
+          const childIndex = rightIndex < items.length && items[rightIndex].priority < items[leftIndex].priority ? rightIndex : leftIndex;
+          if (items[childIndex].priority >= last.priority) break;
+          items[index] = items[childIndex];
+          index = childIndex;
+        }
+        items[index] = last;
+      }
+      return top;
+    },
+  };
+}
+
+function findDemoSolutionWithProfile(profile) {
+  const seen = new Set();
+  const queue = createDemoPriorityQueue();
+  const searchNodes = [{ solveState: createDemoSolveState(), previous: -1, action: null, depth: 0 }];
+  let visitedCount = 0;
+
+  queue.push({ id: 0, priority: demoSolvePriority(searchNodes[0].solveState, 0, profile) });
+
+  while (queue.length && visitedCount < demoSolverNodeLimit) {
+    const item = queue.pop();
+    const node = searchNodes[item.id];
+    const key = demoSolveKey(node.solveState);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    visitedCount += 1;
+
+    if (isDemoSolveCleared(node.solveState)) {
+      const solution = [];
+      let id = item.id;
+      while (searchNodes[id].previous !== -1) {
+        solution.push(searchNodes[id].action);
+        id = searchNodes[id].previous;
+      }
+      return { solution: solution.reverse(), nodes: visitedCount };
+    }
+
+    for (const action of demoSolveActions(node.solveState, profile)) {
+      const nextState = applyDemoSolveAction(node.solveState, action);
+      const id = searchNodes.length;
+      const depth = node.depth + 1;
+      searchNodes.push({ solveState: nextState, previous: item.id, action, depth });
+      queue.push({ id, priority: demoSolvePriority(nextState, depth, profile) });
+    }
+  }
+
+  return { solution: null, nodes: visitedCount };
+}
+
+function findDemoSolution() {
+  let searchedNodes = 0;
+
+  for (const profile of demoSolverProfiles) {
+    const result = findDemoSolutionWithProfile(profile);
+    searchedNodes += result.nodes;
+    if (result.solution) return { ...result, nodes: searchedNodes, profileName: profile.name };
+  }
+
+  return { solution: null, nodes: searchedNodes };
+}
+
+function applyDemoMove(action) {
+  let moved = null;
+  if (action.type === "current-stack") {
+    moved = state.current;
+    drawNextCard();
+    state.stacks[action.stackIndex].push(moved);
+    state.lastPlaced = { type: "stack", index: action.stackIndex, row: state.stacks[action.stackIndex].length - 1, card: moved };
+    setMessage(`示範模式：${moved} 放入 ${stackNames[action.stackIndex]}，不計分。`);
+  } else {
+    const source = action.type === "stack-goal" ? state.stacks[action.stackIndex] : null;
+    moved = source ? source.pop() : state.current;
+    if (!source) drawNextCard();
+    state.goals[action.goalIndex].push(moved);
+    state.completed += 1;
+    state.lastPlaced = { type: "goal", index: action.goalIndex, row: state.goals[action.goalIndex].length - 1, card: moved };
+    setMessage(`示範模式：${moved} 放到 +${action.goalIndex + 1}，不計分。`);
+  }
+
+  state.selected = null;
+  state.combo = 0;
+  state.score = 0;
+  render();
+}
+
+function finishDemo(message) {
+  if (demoTimer) window.clearTimeout(demoTimer);
+  demoTimer = null;
+  demoMoves = [];
+  demoMoveIndex = 0;
+  state.demoMode = false;
+  demoBtn.textContent = "完美示範";
+  demoBtn.classList.remove("running");
+  render();
+  setMessage(message);
+}
+
+function runNextDemoMove() {
+  if (!state.demoMode) return;
+  if (demoMoveIndex >= demoMoves.length) {
+    finishDemo("完美示範完成。本次示範不計分，也不更新最佳分數。");
+    flashElement(boardEl, "round-clear");
+    return;
+  }
+
+  applyDemoMove(demoMoves[demoMoveIndex]);
+  demoMoveIndex += 1;
+  demoTimer = window.setTimeout(runNextDemoMove, demoStepDelay);
+}
+
+function startPerfectDemo() {
+  if (state.demoMode) {
+    finishDemo("已停止示範。你可以重新開始或自己接著玩。");
+    return;
+  }
+
+  setMessage("正在尋找完美示範解，請稍等。");
+  demoBtn.disabled = true;
+  window.setTimeout(() => {
+    const { solution, nodes, profileName } = findDemoSolution();
+    demoBtn.disabled = false;
+    if (!solution) {
+      setMessage(`示範器在 ${nodes.toLocaleString()} 個狀態內還沒找到路徑；這不代表無解，可以自己挑戰、換挑戰碼，或降低難度再試。`);
+      return;
+    }
+
+    startRound(true);
+    state.demoMode = true;
+    state.score = 0;
+    state.combo = 0;
+    state.history = [];
+    demoMoves = solution;
+    demoMoveIndex = 0;
+    demoBtn.textContent = "停止示範";
+    demoBtn.classList.add("running");
+    setMessage(`示範模式：${profileName}找到 ${solution.length} 步解法，正在自動演示，不計分。`);
+    render();
+    demoTimer = window.setTimeout(runNextDemoMove, demoStepDelay);
+  }, 30);
 }
 
 function createDeck() {
@@ -516,6 +899,7 @@ function endDragVisuals() {
 }
 
 function startPointerDrag(event, source, originEl) {
+  if (state.demoMode) return;
   if (!originEl || event.button > 0) return;
   if (source.type === "current" && !state.current) return;
   if (source.type === "stack") {
@@ -809,8 +1193,17 @@ function render() {
   hintToggle.checked = state.showFutureHints;
   soundToggle.checked = state.soundEnabled;
   if (document.activeElement !== seedInput) seedInput.value = state.seed;
-  undoBtn.disabled = state.history.length === 0;
-  nextBtn.disabled = !isCleared();
+  undoBtn.disabled = state.demoMode || state.history.length === 0;
+  restartBtn.disabled = state.demoMode;
+  nextBtn.disabled = state.demoMode || !isCleared();
+  currentCardEl.disabled = state.demoMode;
+  prefillSlider.disabled = state.demoMode;
+  hintToggle.disabled = state.demoMode;
+  seedInput.disabled = state.demoMode;
+  seedApplyBtn.disabled = state.demoMode;
+  seedRandomBtn.disabled = state.demoMode;
+  demoBtn.textContent = state.demoMode ? "停止示範" : "完美示範";
+  demoBtn.classList.toggle("running", state.demoMode);
   renderStacks();
   renderGoals();
   renderTabs();
@@ -819,6 +1212,7 @@ function render() {
 }
 
 currentCardEl.addEventListener("click", () => {
+  if (state.demoMode) return;
   if (dragState.suppressClick) {
     dragState.suppressClick = false;
     return;
@@ -837,14 +1231,21 @@ currentCardEl.addEventListener("pointerdown", (event) => {
 });
 
 document.querySelectorAll(".stack-tab").forEach((button) => {
-  button.addEventListener("click", () => pushToStack(Number(button.dataset.stack)));
+  button.addEventListener("click", () => {
+    if (state.demoMode) return;
+    pushToStack(Number(button.dataset.stack));
+  });
 });
 
 document.querySelectorAll(".goal-tab").forEach((button) => {
-  button.addEventListener("click", () => autoMoveToGoal(Number(button.dataset.goal), button));
+  button.addEventListener("click", () => {
+    if (state.demoMode) return;
+    autoMoveToGoal(Number(button.dataset.goal), button);
+  });
 });
 
 stackGridEl.addEventListener("click", (event) => {
+  if (state.demoMode) return;
   if (dragState.suppressClick) {
     dragState.suppressClick = false;
     return;
@@ -862,21 +1263,30 @@ stackGridEl.addEventListener("click", (event) => {
 });
 
 stackGridEl.addEventListener("pointerdown", (event) => {
+  if (state.demoMode) return;
   const card = event.target.closest(".stack-card.top-card");
   if (!card) return;
   startPointerDrag(event, { type: "stack", stackIndex: Number(card.dataset.stack) }, card);
 });
 
 goalGridEl.addEventListener("click", (event) => {
+  if (state.demoMode) return;
   const card = event.target.closest(".goal-card");
   const column = event.target.closest(".goal-column");
   if (!card && !column) return;
   moveToGoal(Number((card ?? column).dataset.goal), card ?? column);
 });
 
-undoBtn.addEventListener("click", undo);
-restartBtn.addEventListener("click", () => startRound(true));
+undoBtn.addEventListener("click", () => {
+  if (state.demoMode) return;
+  undo();
+});
+restartBtn.addEventListener("click", () => {
+  if (state.demoMode) return;
+  startRound(true);
+});
 nextBtn.addEventListener("click", () => {
+  if (state.demoMode) return;
   if (!isCleared()) {
     setMessage("清完全部牌後才能進入下一局。");
     return;
@@ -887,6 +1297,7 @@ nextBtn.addEventListener("click", () => {
 });
 
 prefillSlider.addEventListener("input", () => {
+  if (state.demoMode) return;
   state.prefilledRows = Number(prefillSlider.value);
   summaryPrefillEl.textContent = state.prefilledRows;
   summaryDifficultyEl.textContent = difficultyLabel(state.prefilledRows);
@@ -897,27 +1308,32 @@ prefillSlider.addEventListener("input", () => {
 });
 
 prefillSlider.addEventListener("change", () => {
+  if (state.demoMode) return;
   startRound(true);
 });
 
 hintToggle.addEventListener("change", () => {
+  if (state.demoMode) return;
   state.showFutureHints = hintToggle.checked;
   render();
 });
 
 seedApplyBtn.addEventListener("click", () => {
+  if (state.demoMode) return;
   state.seed = normalizeSeed(seedInput.value) || randomSeed();
   seedInput.value = state.seed;
   startRound(false);
 });
 
 seedInput.addEventListener("keydown", (event) => {
+  if (state.demoMode) return;
   if (event.key !== "Enter") return;
   event.preventDefault();
   seedApplyBtn.click();
 });
 
 seedRandomBtn.addEventListener("click", () => {
+  if (state.demoMode) return;
   state.seed = randomSeed();
   seedInput.value = state.seed;
   startRound(false);
@@ -927,6 +1343,8 @@ soundToggle.addEventListener("change", () => {
   state.soundEnabled = soundToggle.checked;
   if (state.soundEnabled) playSound("place");
 });
+
+demoBtn.addEventListener("click", startPerfectDemo);
 
 scoreHelpBtn.addEventListener("click", openScoreHelp);
 scoreHelpCloseBtn.addEventListener("click", closeScoreHelp);

@@ -1148,6 +1148,14 @@ input[type="text"] {
   background: linear-gradient(180deg, var(--orange), #bd7100);
 }
 
+.controls .demo-button {
+  background: linear-gradient(180deg, #6b7052, #454b35);
+}
+
+.controls .demo-button.running {
+  background: linear-gradient(180deg, #c49a4a, #82631f);
+}
+
 .controls button:hover {
   filter: brightness(1.08);
   transform: translateY(-1px);
@@ -1462,7 +1470,7 @@ input[type="text"] {
   }
 
   .controls {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .controls button {
