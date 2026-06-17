@@ -71,34 +71,36 @@
         <div class="level-control">
           <details class="settings-panel">
             <summary>難度 / 設定</summary>
-            <label for="prefillSlider">已排好 <strong id="prefillValue">8</strong> 排</label>
-            <div class="difficulty-name" id="difficultyName">普通</div>
-            <input id="prefillSlider" type="range" min="0" max="12" value="8" />
-            <div class="level-caption">
-              <span>全部自己排</span>
-              <span>低難度</span>
-            </div>
-            <label class="hint-toggle">
-              <input id="hintToggle" type="checkbox" />
-              <span>顯示後續白牌</span>
-            </label>
-            <div class="seed-control">
-              <label for="seedInput">挑戰碼</label>
-              <div class="seed-row">
-                <input id="seedInput" type="text" maxlength="12" autocomplete="off" spellcheck="false" />
-                <button id="seedApplyBtn" type="button">套用</button>
-                <button id="seedRandomBtn" type="button">隨機</button>
+            <div class="settings-popover">
+              <label for="prefillSlider">已排好 <strong id="prefillValue">8</strong> 排</label>
+              <div class="difficulty-name" id="difficultyName">普通</div>
+              <input id="prefillSlider" type="range" min="0" max="12" value="8" />
+              <div class="level-caption">
+                <span>全部自己排</span>
+                <span>低難度</span>
               </div>
+              <label class="hint-toggle">
+                <input id="hintToggle" type="checkbox" />
+                <span>顯示後續白牌</span>
+              </label>
+              <div class="seed-control">
+                <label for="seedInput">挑戰碼</label>
+                <div class="seed-row">
+                  <input id="seedInput" type="text" maxlength="12" autocomplete="off" spellcheck="false" />
+                  <button id="seedApplyBtn" type="button">套用</button>
+                  <button id="seedRandomBtn" type="button">隨機</button>
+                </div>
+              </div>
+              <label class="hint-toggle">
+                <input id="soundToggle" type="checkbox" checked />
+                <span>柔和音效</span>
+              </label>
             </div>
-            <label class="hint-toggle">
-              <input id="soundToggle" type="checkbox" checked />
-              <span>柔和音效</span>
-            </label>
           </details>
         </div>
 
         <div class="controls" aria-label="控制">
-          <button id="undoBtn" type="button">倒退 -5</button>
+          <button id="undoBtn" type="button">倒退 -50</button>
           <button id="restartBtn" type="button">再一次</button>
           <button id="nextBtn" type="button">下一局</button>
           <button class="demo-button" id="demoBtn" type="button">完美示範</button>
@@ -112,13 +114,23 @@
       <section class="score-help-panel">
         <header>
           <div>
-            <span class="score-help-kicker">HOW TO SCORE</span>
-            <h2 id="scoreHelpTitle">計分方式</h2>
+            <span class="score-help-kicker">HELP</span>
+            <h2 id="scoreHelpTitle">玩法與計分</h2>
           </div>
           <button class="score-help-close" id="scoreHelpCloseBtn" type="button" aria-label="關閉計分說明">×</button>
         </header>
 
         <div class="score-help-content">
+          <section class="score-rule">
+            <h3>玩法說明</h3>
+            <ul class="how-to-play-list">
+              <li>目標是把所有牌放進 <strong>+1、+2、+3、+4</strong> 四個目標欄。</li>
+              <li>每個目標欄都有固定順序，只能放目前需要的下一張牌。</li>
+              <li>牌面可以先放進 <strong>暫A～暫D</strong>，但暫存是 stack，只能拿最上面的牌。</li>
+              <li>暫存最多 <strong>18 張</strong>；完成全部目標欄就破關。</li>
+            </ul>
+          </section>
+
           <section class="score-rule">
             <h3>Combo 加分</h3>
             <p>每張正確放入目標欄：<strong>20 + Combo × 10</strong></p>
@@ -128,7 +140,7 @@
               <span>Combo 10 <b>+120</b></span>
               <span>Combo 20 <b>+220</b></span>
             </div>
-            <p class="score-note">放入暫存區或放錯位置會中斷 Combo；倒退一步扣 5 分。每局重新計分，最佳紀錄會保留。</p>
+            <p class="score-note">放入暫存區或放錯位置會中斷 Combo；倒退一步扣 50 分。每局重新計分，最佳紀錄會保留。</p>
           </section>
 
           <section class="score-rule">

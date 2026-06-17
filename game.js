@@ -1,8 +1,8 @@
 const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const stackNames = ["暫A", "暫B", "暫C", "暫D"];
 const targetRows = 13;
-const maxStackHeight = 16;
-const undoPenalty = 5;
+const maxStackHeight = 18;
+const undoPenalty = 50;
 const dragThreshold = 6;
 const demoStepDelay = 420;
 const demoSolverNodeLimit = 250000;
@@ -49,6 +49,9 @@ const state = {
   lastPlaced: null,
   stuckAnnounced: false,
   demoMode: false,
+  demoScoreActive: false,
+  playbackMode: null,
+  moveLog: [],
 };
 
 const dragState = {
@@ -84,6 +87,7 @@ const undoBtn = document.getElementById("undoBtn");
 const restartBtn = document.getElementById("restartBtn");
 const nextBtn = document.getElementById("nextBtn");
 const demoBtn = document.getElementById("demoBtn");
+const settingsPanel = document.querySelector(".settings-panel");
 const prefillSlider = document.getElementById("prefillSlider");
 const prefillValueEl = document.getElementById("prefillValue");
 const difficultyNameEl = document.getElementById("difficultyName");
@@ -98,6 +102,7 @@ let scoreHelpPreviousFocus = null;
 let demoTimer = null;
 let demoMoves = [];
 let demoMoveIndex = 0;
+let celebrationTimer = null;
 
 function openScoreHelp() {
   scoreHelpPreviousFocus = document.activeElement;
@@ -396,12 +401,17 @@ function findDemoSolution() {
 
 function applyDemoMove(action) {
   let moved = null;
+  let cleared = false;
+  let clearBonus = 0;
+  const modeLabel = state.playbackMode === "replay" ? "回放" : "示範模式";
   if (action.type === "current-stack") {
     moved = state.current;
     drawNextCard();
     state.stacks[action.stackIndex].push(moved);
     state.lastPlaced = { type: "stack", index: action.stackIndex, row: state.stacks[action.stackIndex].length - 1, card: moved };
-    setMessage(`示範模式：${moved} 放入 ${stackNames[action.stackIndex]}，不計分。`);
+    breakComboForTempMove();
+    setMessage(`${modeLabel}：${moved} 放入 ${stackNames[action.stackIndex]}，Combo 歸零。`);
+    playSound("temp");
   } else {
     const source = action.type === "stack-goal" ? state.stacks[action.stackIndex] : null;
     moved = source ? source.pop() : state.current;
@@ -409,13 +419,24 @@ function applyDemoMove(action) {
     state.goals[action.goalIndex].push(moved);
     state.completed += 1;
     state.lastPlaced = { type: "goal", index: action.goalIndex, row: state.goals[action.goalIndex].length - 1, card: moved };
-    setMessage(`示範模式：${moved} 放到 +${action.goalIndex + 1}，不計分。`);
+    const gained = scoreCorrectPlacement();
+    setMessage(`${modeLabel}：${moved} 放到 +${action.goalIndex + 1}，Combo ${state.combo}，+${gained} 分。`);
+    if (isCleared()) {
+      clearBonus = awardClearBonus();
+      setMessage(`${modeLabel}完成！清關加分 +${clearBonus}。成績不會更新最佳分數。`);
+      cleared = true;
+    }
+    playSound(cleared ? "clear" : "place");
   }
 
   state.selected = null;
-  state.combo = 0;
-  state.score = 0;
   render();
+  flashElement(scoreEl, "stat-pop");
+  if (action.type !== "current-stack") flashElement(completedEl, "stat-pop");
+  if (cleared) {
+    flashElement(boardEl, "round-clear");
+    playClearCelebration(clearBonus);
+  }
 }
 
 function finishDemo(message) {
@@ -424,6 +445,7 @@ function finishDemo(message) {
   demoMoves = [];
   demoMoveIndex = 0;
   state.demoMode = false;
+  state.playbackMode = null;
   demoBtn.textContent = "完美示範";
   demoBtn.classList.remove("running");
   render();
@@ -433,8 +455,7 @@ function finishDemo(message) {
 function runNextDemoMove() {
   if (!state.demoMode) return;
   if (demoMoveIndex >= demoMoves.length) {
-    finishDemo("完美示範完成。本次示範不計分，也不更新最佳分數。");
-    flashElement(boardEl, "round-clear");
+    finishDemo(state.playbackMode === "replay" ? "精彩回放完成。回放成績只供參考，不會更新最佳分數。" : "完美示範完成。示範成績只供參考，不會更新最佳分數。");
     return;
   }
 
@@ -445,7 +466,12 @@ function runNextDemoMove() {
 
 function startPerfectDemo() {
   if (state.demoMode) {
-    finishDemo("已停止示範。你可以重新開始或自己接著玩。");
+    finishDemo(state.playbackMode === "replay" ? "已停止回放。你可以重新開始或自己接著玩。" : "已停止示範。你可以重新開始或自己接著玩。");
+    return;
+  }
+
+  if (isCleared() && state.moveLog.length > 0 && !state.demoScoreActive) {
+    startReplay();
     return;
   }
 
@@ -461,6 +487,8 @@ function startPerfectDemo() {
 
     startRound(true);
     state.demoMode = true;
+    state.demoScoreActive = true;
+    state.playbackMode = "demo";
     state.score = 0;
     state.combo = 0;
     state.history = [];
@@ -468,10 +496,29 @@ function startPerfectDemo() {
     demoMoveIndex = 0;
     demoBtn.textContent = "停止示範";
     demoBtn.classList.add("running");
-    setMessage(`示範模式：${profileName}找到 ${solution.length} 步解法，正在自動演示，不計分。`);
+    setMessage(`示範模式：${profileName}找到 ${solution.length} 步解法，會顯示分數但不更新最佳。`);
     render();
     demoTimer = window.setTimeout(runNextDemoMove, demoStepDelay);
   }, 30);
+}
+
+function startReplay() {
+  const replayMoves = state.moveLog.map((move) => ({ ...move }));
+  startRound(true);
+  state.demoMode = true;
+  state.demoScoreActive = true;
+  state.playbackMode = "replay";
+  state.score = 0;
+  state.combo = 0;
+  state.history = [];
+  state.moveLog = replayMoves.map((move) => ({ ...move }));
+  demoMoves = replayMoves;
+  demoMoveIndex = 0;
+  demoBtn.textContent = "停止回放";
+  demoBtn.classList.add("running");
+  setMessage(`精彩回放：正在重播 ${replayMoves.length} 步，分數只供參考。`);
+  render();
+  demoTimer = window.setTimeout(runNextDemoMove, demoStepDelay);
 }
 
 function createDeck() {
@@ -591,6 +638,23 @@ function flashElement(element, className) {
   element.classList.add(className);
 }
 
+function playClearCelebration(clearBonus) {
+  if (celebrationTimer) window.clearTimeout(celebrationTimer);
+  boardEl.classList.remove("celebrating");
+  scoreEl.parentElement?.classList.remove("clear-bonus-pop");
+  goalGridEl.querySelectorAll(".placed-card").forEach((card) => card.classList.remove("placed-card"));
+  void boardEl.offsetWidth;
+
+  boardEl.classList.add("celebrating");
+  scoreEl.parentElement?.classList.add("clear-bonus-pop");
+  scoreEl.parentElement?.style.setProperty("--clear-bonus-text", `"+${clearBonus}"`);
+
+  celebrationTimer = window.setTimeout(() => {
+    boardEl.classList.remove("celebrating");
+    scoreEl.parentElement?.classList.remove("clear-bonus-pop");
+  }, 3100);
+}
+
 function buildGoalSequences() {
   return [1, 2, 3, 4].map((step) => {
     const sequence = [];
@@ -621,6 +685,9 @@ function startRound(keepRound = false) {
   state.lastClearBonus = 0;
   state.lastPlaced = null;
   state.stuckAnnounced = false;
+  state.demoScoreActive = false;
+  state.playbackMode = null;
+  state.moveLog = [];
   drawNextCard();
   setMessage(
     state.prefilledRows === 0
@@ -628,6 +695,17 @@ function startRound(keepRound = false) {
       : `${difficultyLabel(state.prefilledRows)}：灰色區已排好 ${state.prefilledRows} 排。挑戰碼 ${state.seed}。`,
   );
   render();
+}
+
+function hasTakenAction() {
+  return state.history.length > 0;
+}
+
+function clearDemoScoreIfNeeded(message = null) {
+  if (!state.demoScoreActive || state.demoMode) return false;
+  startRound(true);
+  setMessage(message ?? "示範成績已清除，開始自己挑戰。");
+  return true;
 }
 
 function snapshot() {
@@ -643,6 +721,7 @@ function snapshot() {
     tempMoves: state.tempMoves,
     undoCount: state.undoCount,
     lastClearBonus: state.lastClearBonus,
+    moveLog: state.moveLog.map((move) => ({ ...move })),
   };
 }
 
@@ -658,6 +737,7 @@ function restore(data) {
   state.tempMoves = data.tempMoves;
   state.undoCount = data.undoCount;
   state.lastClearBonus = data.lastClearBonus;
+  state.moveLog = (data.moveLog ?? []).map((move) => ({ ...move }));
   state.lastPlaced = null;
   state.stuckAnnounced = false;
   render();
@@ -900,6 +980,10 @@ function endDragVisuals() {
 
 function startPointerDrag(event, source, originEl) {
   if (state.demoMode) return;
+  if (state.demoScoreActive) {
+    clearDemoScoreIfNeeded();
+    return;
+  }
   if (!originEl || event.button > 0) return;
   if (source.type === "current" && !state.current) return;
   if (source.type === "stack") {
@@ -1024,6 +1108,7 @@ function pushToStack(stackIndex) {
   state.history.push(snapshot());
   const card = takeSourceCard();
   state.stacks[stackIndex].push(card);
+  state.moveLog.push({ type: "current-stack", stackIndex });
   state.selected = null;
   state.lastPlaced = { type: "stack", index: stackIndex, row: state.stacks[stackIndex].length - 1, card };
   breakComboForTempMove();
@@ -1044,6 +1129,7 @@ function placeSourceOnGoal(goalIndex, source, feedbackTarget = null) {
     return;
   }
   state.history.push(snapshot());
+  state.moveLog.push(source.type === "stack" ? { type: "stack-goal", stackIndex: source.stackIndex, goalIndex } : { type: "current-goal", goalIndex });
   const moved = takeCardFromSource(source);
   state.goals[goalIndex].push(moved);
   state.selected = null;
@@ -1052,16 +1138,20 @@ function placeSourceOnGoal(goalIndex, source, feedbackTarget = null) {
   const gained = scoreCorrectPlacement();
   setMessage(`${moved} 放到 +${goalIndex + 1}，Combo ${state.combo}，+${gained} 分。`);
   let cleared = false;
+  let clearBonus = 0;
   if (isCleared()) {
-    const bonus = awardClearBonus();
-    setMessage(`完成本局！清關加分 +${bonus}。下一局會少排好一排，難度提高。`);
+    clearBonus = awardClearBonus();
+    setMessage(`完成本局！清關加分 +${clearBonus}。下一局會少排好一排，難度提高。`);
     cleared = true;
   }
   playSound(cleared ? "clear" : "place");
   render();
   flashElement(scoreEl, "stat-pop");
   flashElement(completedEl, "stat-pop");
-  if (cleared) flashElement(boardEl, "round-clear");
+  if (cleared) {
+    flashElement(boardEl, "round-clear");
+    playClearCelebration(clearBonus);
+  }
 }
 
 function moveToGoal(goalIndex, feedbackTarget = null) {
@@ -1183,7 +1273,7 @@ function render() {
   summaryDifficultyEl.dataset.difficulty = difficultyClass(state.prefilledRows);
   streakEl.textContent = state.combo;
   completedEl.textContent = state.completed;
-  state.bestScore = Math.max(state.bestScore, state.score);
+  if (!state.demoMode && !state.demoScoreActive) state.bestScore = Math.max(state.bestScore, state.score);
   scoreEl.textContent = state.score;
   bestScoreEl.textContent = state.bestScore;
   prefillValueEl.textContent = state.prefilledRows;
@@ -1195,6 +1285,7 @@ function render() {
   if (document.activeElement !== seedInput) seedInput.value = state.seed;
   undoBtn.disabled = state.demoMode || state.history.length === 0;
   restartBtn.disabled = state.demoMode;
+  restartBtn.textContent = hasTakenAction() ? "再一次" : "換新一組";
   nextBtn.disabled = state.demoMode || !isCleared();
   currentCardEl.disabled = state.demoMode;
   prefillSlider.disabled = state.demoMode;
@@ -1202,7 +1293,7 @@ function render() {
   seedInput.disabled = state.demoMode;
   seedApplyBtn.disabled = state.demoMode;
   seedRandomBtn.disabled = state.demoMode;
-  demoBtn.textContent = state.demoMode ? "停止示範" : "完美示範";
+  demoBtn.textContent = state.demoMode ? (state.playbackMode === "replay" ? "停止回放" : "停止示範") : isCleared() && state.moveLog.length > 0 && !state.demoScoreActive ? "精彩回放" : "完美示範";
   demoBtn.classList.toggle("running", state.demoMode);
   renderStacks();
   renderGoals();
@@ -1233,6 +1324,7 @@ currentCardEl.addEventListener("pointerdown", (event) => {
 document.querySelectorAll(".stack-tab").forEach((button) => {
   button.addEventListener("click", () => {
     if (state.demoMode) return;
+    if (clearDemoScoreIfNeeded()) return;
     pushToStack(Number(button.dataset.stack));
   });
 });
@@ -1240,12 +1332,21 @@ document.querySelectorAll(".stack-tab").forEach((button) => {
 document.querySelectorAll(".goal-tab").forEach((button) => {
   button.addEventListener("click", () => {
     if (state.demoMode) return;
+    if (clearDemoScoreIfNeeded()) return;
     autoMoveToGoal(Number(button.dataset.goal), button);
   });
 });
 
 stackGridEl.addEventListener("click", (event) => {
   if (state.demoMode) return;
+  if (state.demoScoreActive) {
+    const card = event.target.closest(".stack-card");
+    const column = event.target.closest(".stack-column, .stack-placeholder");
+    if (card || column) {
+      clearDemoScoreIfNeeded();
+      return;
+    }
+  }
   if (dragState.suppressClick) {
     dragState.suppressClick = false;
     return;
@@ -1264,6 +1365,10 @@ stackGridEl.addEventListener("click", (event) => {
 
 stackGridEl.addEventListener("pointerdown", (event) => {
   if (state.demoMode) return;
+  if (state.demoScoreActive) {
+    clearDemoScoreIfNeeded();
+    return;
+  }
   const card = event.target.closest(".stack-card.top-card");
   if (!card) return;
   startPointerDrag(event, { type: "stack", stackIndex: Number(card.dataset.stack) }, card);
@@ -1271,6 +1376,14 @@ stackGridEl.addEventListener("pointerdown", (event) => {
 
 goalGridEl.addEventListener("click", (event) => {
   if (state.demoMode) return;
+  if (state.demoScoreActive) {
+    const card = event.target.closest(".goal-card");
+    const column = event.target.closest(".goal-column");
+    if (card || column) {
+      clearDemoScoreIfNeeded();
+      return;
+    }
+  }
   const card = event.target.closest(".goal-card");
   const column = event.target.closest(".goal-column");
   if (!card && !column) return;
@@ -1283,10 +1396,27 @@ undoBtn.addEventListener("click", () => {
 });
 restartBtn.addEventListener("click", () => {
   if (state.demoMode) return;
+  if (state.demoScoreActive) {
+    startRound(true);
+    setMessage("示範成績已清除，重新開始自己挑戰。");
+    return;
+  }
+  if (!hasTakenAction()) {
+    state.seed = randomSeed();
+    seedInput.value = state.seed;
+    startRound(false);
+    setMessage(`換新一組：挑戰碼 ${state.seed}。`);
+    return;
+  }
   startRound(true);
 });
 nextBtn.addEventListener("click", () => {
   if (state.demoMode) return;
+  if (state.demoScoreActive) {
+    startRound(true);
+    setMessage("示範成績已清除，請自己完成本局後再進入下一局。");
+    return;
+  }
   if (!isCleared()) {
     setMessage("清完全部牌後才能進入下一局。");
     return;
@@ -1298,6 +1428,7 @@ nextBtn.addEventListener("click", () => {
 
 prefillSlider.addEventListener("input", () => {
   if (state.demoMode) return;
+  if (state.demoScoreActive) state.demoScoreActive = false;
   state.prefilledRows = Number(prefillSlider.value);
   summaryPrefillEl.textContent = state.prefilledRows;
   summaryDifficultyEl.textContent = difficultyLabel(state.prefilledRows);
@@ -1309,6 +1440,7 @@ prefillSlider.addEventListener("input", () => {
 
 prefillSlider.addEventListener("change", () => {
   if (state.demoMode) return;
+  state.demoScoreActive = false;
   startRound(true);
 });
 
@@ -1320,6 +1452,7 @@ hintToggle.addEventListener("change", () => {
 
 seedApplyBtn.addEventListener("click", () => {
   if (state.demoMode) return;
+  state.demoScoreActive = false;
   state.seed = normalizeSeed(seedInput.value) || randomSeed();
   seedInput.value = state.seed;
   startRound(false);
@@ -1334,6 +1467,7 @@ seedInput.addEventListener("keydown", (event) => {
 
 seedRandomBtn.addEventListener("click", () => {
   if (state.demoMode) return;
+  state.demoScoreActive = false;
   state.seed = randomSeed();
   seedInput.value = state.seed;
   startRound(false);
@@ -1353,6 +1487,12 @@ scoreHelpOverlay.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !scoreHelpOverlay.hidden) closeScoreHelp();
+  if (event.key === "Escape" && settingsPanel?.open) settingsPanel.open = false;
+});
+
+document.addEventListener("click", (event) => {
+  if (!settingsPanel?.open || settingsPanel.contains(event.target)) return;
+  settingsPanel.open = false;
 });
 
 window.addEventListener("pointermove", onPointerMove, { passive: false });

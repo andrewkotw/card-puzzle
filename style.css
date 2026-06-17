@@ -131,6 +131,40 @@ html {
   }
 }
 
+@keyframes clearCardWave {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+    filter: none;
+  }
+  28% {
+    transform: translateY(-18px) rotate(-1.4deg);
+    filter: brightness(1.12);
+  }
+  58% {
+    transform: translateY(4px) rotate(0.8deg);
+  }
+}
+
+@keyframes clearBonusFloat {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.82);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(-15px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-26px) scale(0.94);
+  }
+}
+
 .invalid-shake {
   animation: invalidShake 280ms ease both;
 }
@@ -149,6 +183,15 @@ html {
 
 .round-clear {
   animation: roundClear 720ms ease-out both;
+}
+
+.celebrating .goal-card {
+  animation: clearCardWave 760ms cubic-bezier(0.2, 0.8, 0.3, 1.15) 3 both;
+  animation-delay: calc(var(--i) * 34ms);
+}
+
+.celebrating .goal-card.placed-card {
+  animation-name: clearCardWave;
 }
 
 body {
@@ -733,6 +776,20 @@ input[type="text"] {
   grid-column: 1 / -1;
 }
 
+.stat-card.total.clear-bonus-pop::after {
+  content: var(--clear-bonus-text);
+  position: absolute;
+  top: 32px;
+  right: 16px;
+  z-index: 2;
+  color: var(--gold);
+  font-size: 24px;
+  font-weight: 900;
+  text-shadow: 3px 3px 0 #101819;
+  pointer-events: none;
+  animation: clearBonusFloat 1300ms ease-out both;
+}
+
 .score-help-button {
   position: absolute;
   top: 8px;
@@ -799,6 +856,8 @@ input[type="text"] {
   width: min(760px, 100%);
   max-height: min(760px, calc(100dvh - 48px));
   overflow: auto;
+  scrollbar-color: #6d7a74 #172627;
+  scrollbar-width: thin;
   border: 5px solid #101819;
   border-radius: 14px;
   color: var(--ink);
@@ -807,6 +866,25 @@ input[type="text"] {
     linear-gradient(145deg, #314243, #172627);
   box-shadow: 10px 12px 0 rgba(0, 0, 0, 0.5);
   -webkit-overflow-scrolling: touch;
+}
+
+.score-help-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.score-help-panel::-webkit-scrollbar-track {
+  border-left: 3px solid #101819;
+  background: #172627;
+}
+
+.score-help-panel::-webkit-scrollbar-thumb {
+  border: 2px solid #172627;
+  border-radius: 999px;
+  background: #6d7a74;
+}
+
+.score-help-panel::-webkit-scrollbar-thumb:hover {
+  background: #93a099;
 }
 
 .score-help-panel header {
@@ -862,7 +940,7 @@ input[type="text"] {
 .score-help-content {
   display: grid;
   gap: 16px;
-  padding: 20px;
+  padding: 20px 24px 20px 20px;
 }
 
 .score-rule {
@@ -890,6 +968,34 @@ input[type="text"] {
 .score-rule p strong {
   color: var(--orange);
   white-space: nowrap;
+}
+
+.how-to-play-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.how-to-play-list li {
+  position: relative;
+  padding-left: 22px;
+  color: #e3e8df;
+  font-size: 16px;
+  line-height: 1.45;
+  text-shadow: none;
+}
+
+.how-to-play-list li::before {
+  content: "▸";
+  position: absolute;
+  left: 0;
+  color: var(--gold);
+}
+
+.how-to-play-list strong {
+  color: var(--orange);
 }
 
 .combo-examples {
@@ -961,6 +1067,8 @@ input[type="text"] {
 }
 
 .level-control {
+  position: relative;
+  z-index: 20;
   border: 4px solid #101819;
   border-radius: 8px;
   padding: 0;
@@ -973,6 +1081,10 @@ input[type="text"] {
   padding: 10px;
 }
 
+.settings-panel[open] {
+  z-index: 30;
+}
+
 .settings-panel summary {
   cursor: pointer;
   color: #fff8e8;
@@ -982,6 +1094,32 @@ input[type="text"] {
 
 .settings-panel summary::marker {
   color: var(--orange);
+}
+
+.settings-popover {
+  display: none;
+}
+
+.settings-panel[open] .settings-popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: -4px;
+  right: -4px;
+  display: block;
+  border: 4px solid #101819;
+  border-radius: 8px;
+  max-height: min(420px, calc(100dvh - 210px));
+  overflow-y: auto;
+  padding: 12px;
+  background: linear-gradient(180deg, #314243, #1b2c2d);
+  box-shadow: 6px 8px 0 rgba(10, 20, 22, 0.7);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-panel[open] summary {
+  color: var(--gold);
 }
 
 .level-control label {
