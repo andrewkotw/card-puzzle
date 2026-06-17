@@ -1345,6 +1345,14 @@ input[type="text"] {
     font-size: 54px;
   }
 
+  .current-card.rank-wide {
+    font-size: 44px;
+  }
+
+  .current-card.rank-wide::before {
+    font-size: 14px;
+  }
+
   .number {
     min-height: 96px;
     max-height: 120px;
@@ -1374,6 +1382,11 @@ input[type="text"] {
     height: 88px;
     border-width: 4px;
     font-size: 27px;
+  }
+
+  .stack-card.rank-wide span,
+  .goal-card.rank-wide span {
+    font-size: 0.82em;
   }
 
   .stack-card {
@@ -1510,6 +1523,10 @@ input[type="text"] {
 
   .current-card {
     border-width: 5px;
+  }
+
+  .current-card.rank-wide {
+    font-size: 34px;
   }
 
   .play-grid,
